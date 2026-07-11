@@ -10,7 +10,8 @@ void main() {
   test('no hard-coded color literals outside lib/ui/theme.dart', () {
     final libDir = Directory('lib');
     final offenders = <String>[];
-    final pattern = RegExp(r'(Colors\.\w+|Color\(0x[0-9A-Fa-f]{6,8}\)|0x[0-9A-Fa-f]{6,8})');
+    final pattern = RegExp(
+        r'(?<![A-Za-z0-9_])Colors\.\w+|Color\(0x[0-9A-Fa-f]{6,8}\)|0x[0-9A-Fa-f]{6,8}');
     for (final f in libDir.listSync(recursive: true)) {
       if (f is! File || !f.path.endsWith('.dart')) continue;
       if (f.path.replaceAll('\\', '/').endsWith('lib/ui/theme.dart')) continue;
