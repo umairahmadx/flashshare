@@ -5,6 +5,7 @@ import 'package:flashshare/storage/history_store.dart';
 import 'package:flashshare/ui/home_page.dart';
 import 'package:flashshare/ui/settings_store.dart';
 import 'package:flashshare/ui/theme.dart';
+import 'package:flashshare/upload/background_service.dart';
 import 'package:flashshare/upload/upload_engine.dart';
 
 ThemeMode _modeFrom(String s) =>
@@ -26,6 +27,8 @@ void main() async {
   final client = HttpStorageClient(apiDio, token);
   final r2Dio = Dio(BaseOptions(validateStatus: (_) => true));
   final engine = UploadEngine(client, store, r2Dio);
+  await configureBackgroundService();
+  engine.onIdle = stopUploadService;
   final initialMode = _modeFrom(settings.themeMode);
   runApp(FlashShareApp(
     store: store,
