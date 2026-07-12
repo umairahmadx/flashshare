@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:pdf_render/pdf_render.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/files/app_file.dart';
 import 'package:flashshare/models.dart';
@@ -146,6 +150,11 @@ class UploadEngine {
         ownerToken: rec.ownerToken,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       ));
+
+      // Background task: generate and cache a thumbnail locally so it shows
+      // up instantly in the History list without a network download.
+      unawaited(_cacheThumbnail(file, rec.url));
+
       _emit(UploadProgress(
           key: key,
           filename: name,
@@ -255,4 +264,45 @@ class UploadEngine {
   }
 
   void cancel(String key) => _cancellers[key]?.cancel('user');
+
+  Future<void> _cacheThumbnail(AppFile file, String url) async {
+    if (kIsWeb) return; // CacheManager/File ops generally native-only here.
+    try {
+      final ext = file.name.split('.').last.toLowerCase();
+      Uint8List? thumb;
+
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif'].contains(ext)) {
+        // For images, we can just cache the original file bytes as the thumbnail.
+        thumb = await file.readAsBytes();
+      } else if (['mp4', 'mov', 'avi', 'mkv'].contains(ext) && file.path != null) {
+        // For videos, generate a frame.
+        thumb = await VideoThumbnail.thumbnailData(
+          video: file.path!,
+          imageFormat: ImageFormat.JPEG,
+          maxWidth: 256,
+          quality: 75,
+        );
+      } else if (ext == 'pdf') {
+        // For PDFs, render the first page.
+        final doc = file.path != null
+            ? await PdfDocument.openFile(file.path!)
+            : await PdfDocument.openData(await file.readAsBytes());
+        try {
+          final page = await doc.getPage(1);
+          final img = await page.render(width: 256, height: 256);
+          thumb = await img.createImageDetached().then((uiImg) =>
+              uiImg.toByteData(format: ImageByteFormat.png).then((bd) =>
+                  bd?.buffer.asUint8List()));
+        } finally {
+          await doc.dispose();
+        }
+      }
+
+      if (thumb != null) {
+        await DefaultCacheManager().putFile(url, thumb, fileExtension: 'jpg');
+      }
+    } catch (e) {
+      debugPrint('Thumbnail caching failed: $e');
+    }
+  }
 }

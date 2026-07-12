@@ -10,6 +10,7 @@ export 'native_file_stub.dart' if (dart.library.io) 'native_file_io.dart';
 /// `dart:io` directly.
 abstract class AppFile {
   String get name;
+  String? get path;
   Future<int> getSize();
   Future<Uint8List> readAsBytes();
 
@@ -25,6 +26,8 @@ abstract class AppFile {
 class BytesFile implements AppFile {
   @override
   final String name;
+  @override
+  String? get path => null;
   final Uint8List _bytes;
 
   BytesFile(this.name, this._bytes);

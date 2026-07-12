@@ -10,6 +10,9 @@ class _IoFile implements AppFile {
   String get name => _file.path.split(RegExp(r'[/\\]')).last;
 
   @override
+  String? get path => _file.path;
+
+  @override
   Future<int> getSize() => _file.length();
 
   @override

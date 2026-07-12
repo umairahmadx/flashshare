@@ -44,12 +44,14 @@ ThemeData buildTheme(Brightness brightness) {
       backgroundColor: scheme.surface,
       foregroundColor: scheme.onSurface,
       elevation: 0,
-      scrolledUnderElevation: 2,
+      scrolledUnderElevation: 3,
+      shadowColor: scheme.shadow.withValues(alpha: 0.1),
       centerTitle: true,
-      titleTextStyle: const TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.5,
+      titleTextStyle: TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.8,
+        color: scheme.onSurface,
       ),
     ),
 

@@ -116,11 +116,38 @@ class _HomePageState extends State<HomePage> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Flash Share'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.bolt, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Flash Share',
+              style: Theme.of(context).appBarTheme.titleTextStyle,
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            onPressed: () {}, // Info dialog could go here
+            onPressed: () {
+              showAboutDialog(
+                context: context,
+                applicationName: 'Flash Share',
+                applicationVersion: '1.0.0',
+                applicationIcon: const Icon(Icons.bolt, size: 48),
+                children: [
+                  const Text('Simple, secure, and ephemeral file sharing.'),
+                ],
+              );
+            },
           ),
           const SizedBox(width: 8),
         ],

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flashshare/models.dart';
@@ -90,14 +91,16 @@ class HistoryTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: visuals.color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: visuals.color.withValues(alpha: 0.1),
+                      ),
+                      child: _ThumbnailOrIcon(url: e.url, visuals: visuals),
                     ),
-                    child: Icon(visuals.icon, color: visuals.color, size: 24),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -138,6 +141,7 @@ class HistoryTile extends StatelessWidget {
                   _ActionButton(
                     icon: Icons.share_outlined,
                     label: 'Share',
+                    // ignore: deprecated_member_use
                     onPressed: () => Share.share(e.url),
                   ),
                   const SizedBox(width: 8),
@@ -161,6 +165,26 @@ class HistoryTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ThumbnailOrIcon extends StatelessWidget {
+  final String url;
+  final ({IconData icon, Color color}) visuals;
+
+  const _ThumbnailOrIcon({required this.url, required this.visuals});
+
+  @override
+  Widget build(BuildContext context) {
+    // Check if the URL likely points to a file type we might have a thumbnail for.
+    // The UploadEngine caches thumbnails for images, videos, and PDFs under their final URL.
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      // If not an image (or not yet cached), show the standard icon.
+      errorWidget: (context, url, error) => Icon(visuals.icon, color: visuals.color, size: 24),
+      placeholder: (context, url) => Icon(visuals.icon, color: visuals.color, size: 24),
     );
   }
 }
@@ -223,14 +247,18 @@ class ActiveTile extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: visuals.color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: visuals.color.withValues(alpha: 0.1),
+                    ),
+                    child: p.url != null 
+                        ? _ThumbnailOrIcon(url: p.url!, visuals: visuals)
+                        : Icon(visuals.icon, color: visuals.color, size: 20),
                   ),
-                  child: Icon(visuals.icon, color: visuals.color, size: 20),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
