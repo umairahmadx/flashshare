@@ -71,8 +71,6 @@ class _HomePageState extends State<HomePage> {
           ? await MultiFileDialog.show(context, files.length)
           : UploadMode.separate;
       if (mode == null) return;
-      // Start the foreground service BEFORE enqueue so the OS won't kill the
-      // process mid-upload. Safe to call even if it fails (handled internally).
       await startUploadService();
       await widget.engine.enqueue(files, mode);
     } catch (e) {
@@ -104,6 +102,7 @@ class _HomePageState extends State<HomePage> {
         onCopy: _copy,
         onDelete: _delete,
         onCancel: widget.engine.cancel,
+        onViewAll: () => setState(() => _tab = 1),
       ),
       _HistoryTab(
         history: _history,
@@ -146,23 +145,29 @@ class _ShareTab extends StatelessWidget {
   final void Function(HistoryEntry) onCopy;
   final void Function(HistoryEntry) onDelete;
   final void Function(String key) onCancel;
+  final VoidCallback onViewAll;
   const _ShareTab(
       {required this.active,
       required this.history,
       required this.onPick,
       required this.onCopy,
       required this.onDelete,
-      required this.onCancel});
+      required this.onCancel,
+      required this.onViewAll});
 
   @override
   Widget build(BuildContext context) {
     final hasActive = active.isNotEmpty;
-    final hasHistory = history.isNotEmpty;
+    final recent = history.take(5).toList();
+    final hasHistory = recent.isNotEmpty;
+    final hasMore = history.length > 5;
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 820),
         child: CustomScrollView(
           slivers: [
+            SliverToBoxAdapter(child: _UploadSection(onPick: onPick)),
             if (hasActive)
               const SliverToBoxAdapter(
                   child: _SectionHeader(
@@ -180,7 +185,7 @@ class _ShareTab extends StatelessWidget {
                       icon: Icons.history_outlined, label: 'Recent')),
             if (hasHistory)
               SliverList(
-                delegate: SliverChildListDelegate(history
+                delegate: SliverChildListDelegate(recent
                     .map((e) => HistoryTile(
                           e: e,
                           onCopy: () => onCopy(e),
@@ -188,10 +193,85 @@ class _ShareTab extends StatelessWidget {
                         ))
                     .toList()),
               ),
+            if (hasMore)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Center(
+                    child: TextButton.icon(
+                      onPressed: onViewAll,
+                      icon: const Icon(Icons.arrow_forward),
+                      label: const Text('View All History'),
+                    ),
+                  ),
+                ),
+              ),
             if (!hasActive && !hasHistory)
-              SliverToBoxAdapter(child: _EmptyState(onPick: onPick)),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 48),
+                  child: Center(child: Text('No files shared recently.')),
+                ),
+              ),
             const SliverToBoxAdapter(child: SizedBox(height: 96)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UploadSection extends StatelessWidget {
+  final VoidCallback onPick;
+  const _UploadSection({required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Card(
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+          ),
+        ),
+        child: InkWell(
+          onTap: onPick,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.add, size: 32, color: Colors.white),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Share Files',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Pick files from your device to start uploading',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).hintColor,
+                      ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -217,7 +297,7 @@ class _HistoryTab extends StatelessWidget {
           slivers: [
             const SliverToBoxAdapter(
                 child:
-                    _SectionHeader(icon: Icons.history_outlined, label: 'Recent')),
+                    _SectionHeader(icon: Icons.history_outlined, label: 'All History')),
             SliverList(
               delegate: SliverChildListDelegate(history
                   .map((e) => HistoryTile(
@@ -253,48 +333,6 @@ class _SectionHeader extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       color: Theme.of(context).hintColor,
                     )),
-          ],
-        ),
-      );
-}
-
-class _EmptyState extends StatelessWidget {
-  final VoidCallback onPick;
-  const _EmptyState({required this.onPick});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(32, 48, 32, 32),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.bolt,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer),
-            ),
-            const SizedBox(height: 24),
-            Text('Nothing shared yet',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              'Pick files from your device or share them in from another app to get started.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).hintColor),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: onPick,
-              icon: const Icon(Icons.share),
-              label: const Text('Share files'),
-            ),
           ],
         ),
       );
