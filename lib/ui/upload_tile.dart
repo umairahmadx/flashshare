@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flashshare/models.dart';
 import 'package:flashshare/ui/theme.dart';
+import 'package:flashshare/ui/qr_dialog.dart';
 import 'package:flashshare/upload/upload_engine.dart';
 
-/// Pick an icon + accent color for a filename. Colors come from the central
-/// AppColors map (spec §1b) — never a hard-coded Color literal here.
+/// Pick an icon + accent color for a filename.
 ({IconData icon, Color color}) fileVisuals(String filename) {
   final ext = filename.contains('.')
       ? filename.split('.').last.toLowerCase()
       : '';
   switch (ext) {
-    case 'png' ||
-          'jpg' ||
-          'jpeg' ||
-          'gif' ||
-          'webp' ||
-          'bmp' ||
-          'heic' ||
-          'svg':
+    case 'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'bmp' || 'heic' || 'svg':
       return AppColors.fileCategories['image']!;
     case 'mp4' || 'mov' || 'webm' || 'avi' || 'mkv' || 'm4v':
       return AppColors.fileCategories['video']!;
@@ -89,56 +83,108 @@ class HistoryTile extends StatelessWidget {
     return Card(
       child: InkWell(
         onTap: onCopy,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
+          padding: const EdgeInsets.all(16),
+          child: Column(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: visuals.color.withValues(alpha: 0.15),
-                foregroundColor: visuals.color,
-                child: Icon(visuals.icon, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      e.filename,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: visuals.color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    const SizedBox(height: 4),
-                    if (meta.isNotEmpty)
-                      Text(
-                        meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Theme.of(context).hintColor),
-                      ),
-                  ],
-                ),
+                    child: Icon(visuals.icon, color: visuals.color, size: 24),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          e.filename,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        if (meta.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            meta,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).hintColor,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              IconButton(
-                icon: const Icon(Icons.copy_outlined),
-                tooltip: 'Copy link',
-                onPressed: onCopy,
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete',
-                color: Theme.of(context).colorScheme.error,
-                onPressed: onDelete,
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _ActionButton(
+                    icon: Icons.qr_code_2,
+                    label: 'QR',
+                    onPressed: () => QrDialog.show(context, e.url, e.filename),
+                  ),
+                  const SizedBox(width: 8),
+                  _ActionButton(
+                    icon: Icons.share_outlined,
+                    label: 'Share',
+                    onPressed: () => Share.share(e.url),
+                  ),
+                  const SizedBox(width: 8),
+                  _ActionButton(
+                    icon: Icons.copy_outlined,
+                    label: 'Copy',
+                    onPressed: onCopy,
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: onDelete,
+                    color: Theme.of(context).colorScheme.error,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        visualDensity: VisualDensity.compact,
       ),
     );
   }
@@ -152,10 +198,8 @@ class ActiveTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final visuals = fileVisuals(p.filename);
-    final pct =
-        p.total > 0 ? (p.bytesSent / p.total).clamp(0.0, 1.0) : 0.0;
-    final showValue =
-        p.state == UploadState.uploading || p.state == UploadState.done;
+    final pct = p.total > 0 ? (p.bytesSent / p.total).clamp(0.0, 1.0) : 0.0;
+    final showValue = p.state == UploadState.uploading || p.state == UploadState.done;
 
     final stateColor = switch (p.state) {
       UploadState.error => Theme.of(context).colorScheme.error,
@@ -165,8 +209,7 @@ class ActiveTile extends StatelessWidget {
 
     final label = switch (p.state) {
       UploadState.queued => 'Queued',
-      UploadState.uploading =>
-        'Uploading ${(pct * 100).toStringAsFixed(0)}%',
+      UploadState.uploading => 'Uploading ${(pct * 100).toStringAsFixed(0)}%',
       UploadState.confirming => 'Finalizing…',
       UploadState.done => 'Done',
       UploadState.error => 'Error: ${p.error ?? ""}',
@@ -175,18 +218,21 @@ class ActiveTile extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: visuals.color.withValues(alpha: 0.15),
-                  foregroundColor: visuals.color,
-                  child: Icon(visuals.icon, size: 22),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: visuals.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(visuals.icon, color: visuals.color, size: 20),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,19 +241,12 @@ class ActiveTile extends StatelessWidget {
                         p.filename,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      const SizedBox(height: 4),
                       Text(
                         label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(
-                              color: stateColor ??
-                                  Theme.of(context).textTheme.bodySmall?.color,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: stateColor ?? Theme.of(context).hintColor,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
@@ -215,18 +254,21 @@ class ActiveTile extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Cancel',
+                  icon: const Icon(Icons.close, size: 20),
                   onPressed: p.state == UploadState.done ? null : onCancel,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            LinearProgressIndicator(
-              value: showValue ? pct : null,
-              minHeight: 6,
-              borderRadius: const BorderRadius.all(Radius.circular(3)),
-              color: stateColor,
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: showValue ? pct : null,
+                minHeight: 8,
+                color: stateColor ?? Theme.of(context).colorScheme.primary,
+                backgroundColor: (stateColor ?? Theme.of(context).colorScheme.primary)
+                    .withValues(alpha: 0.1),
+              ),
             ),
           ],
         ),

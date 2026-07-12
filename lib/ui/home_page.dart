@@ -115,18 +115,33 @@ class _HomePageState extends State<HomePage> {
       ),
     ];
     return Scaffold(
-      appBar: AppBar(title: const Text('Flash Share')),
+      appBar: AppBar(
+        title: const Text('Flash Share'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: () {}, // Info dialog could go here
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: IndexedStack(index: _tab, children: tabs),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.share_outlined), label: 'Share'),
+              icon: Icon(Icons.share_outlined), 
+              selectedIcon: Icon(Icons.share),
+              label: 'Share'),
           NavigationDestination(
-              icon: Icon(Icons.history_outlined), label: 'History'),
+              icon: Icon(Icons.history_outlined), 
+              selectedIcon: Icon(Icons.history),
+              label: 'History'),
           NavigationDestination(
-              icon: Icon(Icons.settings_outlined), label: 'Settings'),
+              icon: Icon(Icons.settings_outlined), 
+              selectedIcon: Icon(Icons.settings),
+              label: 'Settings'),
         ],
       ),
     );
@@ -162,61 +177,72 @@ class _ShareTab extends StatelessWidget {
     final hasHistory = recent.isNotEmpty;
     final hasMore = history.length > 5;
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _UploadSection(onPick: onPick)),
-            if (hasActive)
-              const SliverToBoxAdapter(
-                  child: _SectionHeader(
-                      icon: Icons.cloud_upload_outlined, label: 'Active uploads')),
-            if (hasActive)
-              SliverList(
-                delegate: SliverChildListDelegate(active
-                    .map((p) => ActiveTile(
-                        p: p, onCancel: () => onCancel(p.key)))
-                    .toList()),
-              ),
-            if (hasHistory)
-              const SliverToBoxAdapter(
-                  child: _SectionHeader(
-                      icon: Icons.history_outlined, label: 'Recent')),
-            if (hasHistory)
-              SliverList(
-                delegate: SliverChildListDelegate(recent
-                    .map((e) => HistoryTile(
-                          e: e,
-                          onCopy: () => onCopy(e),
-                          onDelete: () => onDelete(e),
-                        ))
-                    .toList()),
-              ),
-            if (hasMore)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Center(
-                    child: TextButton.icon(
-                      onPressed: onViewAll,
-                      icon: const Icon(Icons.arrow_forward),
-                      label: const Text('View All History'),
-                    ),
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _UploadSection(onPick: onPick)),
+        if (hasActive)
+          const SliverToBoxAdapter(
+              child: _SectionHeader(
+                  icon: Icons.cloud_upload_outlined, label: 'Active uploads')),
+        if (hasActive)
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 8),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate(active
+                  .map((p) => ActiveTile(
+                      p: p, onCancel: () => onCancel(p.key)))
+                  .toList()),
+            ),
+          ),
+        if (hasHistory)
+          const SliverToBoxAdapter(
+              child: _SectionHeader(
+                  icon: Icons.history_outlined, label: 'Recent')),
+        if (hasHistory)
+          SliverList(
+            delegate: SliverChildListDelegate(recent
+                .map((e) => HistoryTile(
+                      e: e,
+                      onCopy: () => onCopy(e),
+                      onDelete: () => onDelete(e),
+                    ))
+                .toList()),
+          ),
+        if (hasMore)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Center(
+                child: TextButton.icon(
+                  onPressed: onViewAll,
+                  icon: const Icon(Icons.arrow_forward, size: 16),
+                  label: const Text('View Full History'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
-            if (!hasActive && !hasHistory)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.only(top: 48),
-                  child: Center(child: Text('No files shared recently.')),
-                ),
+            ),
+          ),
+        if (!hasActive && !hasHistory)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.history_toggle_off, size: 64, color: Theme.of(context).hintColor.withValues(alpha: 0.2)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No recent activity',
+                    style: TextStyle(color: Theme.of(context).hintColor),
+                  ),
+                ],
               ),
-            const SliverToBoxAdapter(child: SizedBox(height: 96)),
-          ],
-        ),
-      ),
+            ),
+          ),
+        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+      ],
     );
   }
 }
@@ -227,47 +253,78 @@ class _UploadSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    
     return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Card(
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: BorderSide(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Container(
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              scheme.primary,
+              scheme.primary.withValues(alpha: 0.8),
+            ],
           ),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.primary.withValues(alpha: 0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
-        child: InkWell(
-          onTap: onPick,
-          borderRadius: BorderRadius.circular(24),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-            child: Column(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onPick,
+            borderRadius: BorderRadius.circular(32),
+            child: Stack(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
+                Positioned(
+                  right: -20,
+                  bottom: -20,
+                  child: Icon(
+                    Icons.bolt,
+                    size: 160,
+                    color: Colors.white.withValues(alpha: 0.1),
                   ),
-                  child: const Icon(Icons.add, size: 32, color: Colors.white),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Share Files',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface,
+                Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
                       ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Pick files from your device to start uploading',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).hintColor,
+                      const Spacer(),
+                      const Text(
+                        'Share New Files',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Instant, secure, and ephemeral.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -288,29 +345,32 @@ class _HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (history.isEmpty) {
-      return const Center(child: Text('No files shared yet.'));
-    }
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
-        child: CustomScrollView(
-          slivers: [
-            const SliverToBoxAdapter(
-                child:
-                    _SectionHeader(icon: Icons.history_outlined, label: 'All History')),
-            SliverList(
-              delegate: SliverChildListDelegate(history
-                  .map((e) => HistoryTile(
-                        e: e,
-                        onCopy: () => onCopy(e),
-                        onDelete: () => onDelete(e),
-                      ))
-                  .toList()),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 96)),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.history_outlined, size: 64, color: Theme.of(context).hintColor.withValues(alpha: 0.2)),
+            const SizedBox(height: 16),
+            const Text('No files shared yet.'),
           ],
         ),
-      ),
+      );
+    }
+    return CustomScrollView(
+      slivers: [
+        const SliverToBoxAdapter(
+            child: _SectionHeader(icon: Icons.history_outlined, label: 'Full History')),
+        SliverList(
+          delegate: SliverChildListDelegate(history
+              .map((e) => HistoryTile(
+                    e: e,
+                    onCopy: () => onCopy(e),
+                    onDelete: () => onDelete(e),
+                  ))
+              .toList()),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+      ],
     );
   }
 }
@@ -322,15 +382,13 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
             Text(label.toUpperCase(),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      letterSpacing: 1.2,
-                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                      fontWeight: FontWeight.w800,
                       color: Theme.of(context).hintColor,
                     )),
           ],
