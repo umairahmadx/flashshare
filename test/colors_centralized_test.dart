@@ -4,7 +4,7 @@ import 'package:flashshare/ui/theme.dart';
 
 void main() {
   test('AppColors.brand is blue', () {
-    expect(AppColors.brand.value, 0xFF1565FF);
+    expect(AppColors.brand.toARGB32(), 0xFF1565FF);
   });
 
   test('no hard-coded color literals outside lib/ui/theme.dart', () {

@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // added for BindingBase
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/storage/history_store.dart';
@@ -32,20 +32,21 @@ void _reportError(Object error, StackTrace? stack) {
 }
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Catch framework errors (e.g. during build/layout).
-  FlutterError.onError = (details) {
-    FlutterError.presentError(details);
-    _reportError(details.exception, details.stack);
-  };
-  // Catch async/zone errors that escape everything else.
-  PlatformDispatcher.instance.onError = (error, stack) {
-    _reportError(error, stack);
-    return true; // handled — do not terminate the app.
-  };
-
+  BindingBase.debugZoneErrorsAreFatal = true;
   runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // Catch framework errors (e.g. during build/layout).
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      _reportError(details.exception, details.stack);
+    };
+    // Catch async/zone errors that escape everything else.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      _reportError(error, stack);
+      return true; // handled — do not terminate the app.
+    };
+
     _startApp();
   }, _reportError);
 }

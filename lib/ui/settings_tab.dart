@@ -22,20 +22,26 @@ class SettingsTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const _SectionTitle('Appearance'),
-        ...options.map((o) => RadioListTile<ThemeMode>(
-              title: Text(o.label),
-              value: o.mode,
-              groupValue: current,
-              onChanged: (m) {
-                if (m == null) return;
-                onChanged(m);
-                store.setThemeMode(switch (m) {
-                  ThemeMode.light => 'light',
-                  ThemeMode.dark => 'dark',
-                  _ => 'system',
-                });
-              },
-            )),
+        RadioGroup<ThemeMode>(
+          groupValue: current,
+          onChanged: (m) {
+            if (m == null) return;
+            onChanged(m);
+            store.setThemeMode(switch (m) {
+              ThemeMode.light => 'light',
+              ThemeMode.dark => 'dark',
+              _ => 'system',
+            });
+          },
+          child: Column(
+            children: options
+                .map((o) => RadioListTile<ThemeMode>(
+                      title: Text(o.label),
+                      value: o.mode,
+                    ))
+                .toList(),
+          ),
+        ),
         const Divider(),
         const _SectionTitle('Background uploads'),
         const ListTile(

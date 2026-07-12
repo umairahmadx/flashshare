@@ -13,6 +13,7 @@ Future<void> configureBackgroundService() async {
       autoStart: false,
       isForegroundMode: true,
       notificationChannelId: _notificationChannelId,
+      // The library version uses initialNotificationTitle/Content.
       initialNotificationTitle: 'Flash Share',
       initialNotificationContent: 'Uploading files…',
       foregroundServiceTypes: [AndroidForegroundType.dataSync],

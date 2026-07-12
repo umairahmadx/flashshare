@@ -98,7 +98,7 @@ class UploadEngine {
       final bytes = await f.readAsBytes();
       arc.addFile(ArchiveFile(f.name, bytes.length, bytes));
     }
-    final zipped = ZipEncoder().encode(arc)!;
+    final zipped = ZipEncoder().encode(arc);
     final ts = DateTime.now().millisecondsSinceEpoch;
     return BytesFile('flashshare-$ts.zip', Uint8List.fromList(zipped));
   }
