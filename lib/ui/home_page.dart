@@ -66,12 +66,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _receive(List<AppFile> files) async {
-    final mode = files.length > 1
-        ? await MultiFileDialog.show(context, files.length)
-        : UploadMode.separate;
-    if (mode == null) return;
-    await widget.engine.enqueue(files, mode);
-    await startUploadService();
+    try {
+      final mode = files.length > 1
+          ? await MultiFileDialog.show(context, files.length)
+          : UploadMode.separate;
+      if (mode == null) return;
+      // Start the foreground service BEFORE enqueue so the OS won't kill the
+      // process mid-upload. Safe to call even if it fails (handled internally).
+      await startUploadService();
+      await widget.engine.enqueue(files, mode);
+    } catch (e) {
+      if (mounted) showToast(context, 'Upload failed: $e');
+    }
   }
 
   Future<void> _delete(HistoryEntry e) async {

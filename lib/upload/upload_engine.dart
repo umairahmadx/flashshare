@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/files/app_file.dart';
 import 'package:flashshare/models.dart';
@@ -49,30 +49,46 @@ class UploadEngine {
 
   Future<void> enqueue(List<AppFile> files, UploadMode mode) async {
     if (files.isEmpty) return;
-    _active++;
     if (mode == UploadMode.zip) {
-      final zip = await _buildZip(files);
+      AppFile zip;
+      try {
+        zip = await _buildZip(files);
+      } catch (e) {
+        _emitError('flashshare.zip', 'flashshare.zip', 'Failed to build zip: $e');
+        return;
+      }
+      _active++;
       await _uploadOne(zip);
-    } else if (mode == UploadMode.collection) {
-      final col =
-          await _client.createCollection(expectedFileCount: files.length);
-      await _store.add(HistoryEntry(
-        kind: 'collection',
-        id: col.id,
-        url: col.url,
-        filename: 'Collection (${files.length} files)',
-        size: 0,
-        expiresAt: col.expiresAt,
-        ownerToken: col.ownerToken,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      return;
+    }
+    if (mode == UploadMode.collection) {
+      Collection col;
+      try {
+        col = await _client.createCollection(expectedFileCount: files.length);
+        await _store.add(HistoryEntry(
+          kind: 'collection',
+          id: col.id,
+          url: col.url,
+          filename: 'Collection (${files.length} files)',
+          size: 0,
+          expiresAt: col.expiresAt,
+          ownerToken: col.ownerToken,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+      } catch (e) {
+        _emitError(
+            'collection', 'Collection', 'Failed to create collection: $e');
+        return;
+      }
       for (final f in files) {
+        _active++;
         await _uploadOne(f, collectionId: col.id);
       }
-    } else {
-      for (final f in files) {
-        await _uploadOne(f);
-      }
+      return;
+    }
+    for (final f in files) {
+      _active++;
+      await _uploadOne(f);
     }
   }
 
@@ -94,13 +110,13 @@ class UploadEngine {
     final size = await file.getSize();
     final token = CancelToken();
     _cancellers[key] = token;
-    _emit(UploadProgress(
-        key: key,
-        filename: name,
-        state: UploadState.queued,
-        bytesSent: 0,
-        total: size));
     try {
+      _emit(UploadProgress(
+          key: key,
+          filename: name,
+          state: UploadState.queued,
+          bytesSent: 0,
+          total: size));
       final init = await _client.uploadInit(name, ct, size);
       if (init.type == 'single') {
         await _putSingle(init.uploadUrl!, file, ct, size, key, token);
@@ -165,10 +181,7 @@ class UploadEngine {
     } finally {
       _cancellers.remove(key);
       _active--;
-      if (_active <= 0) {
-        _active = 0;
-        onIdle?.call();
-      }
+      if (_active == 0) onIdle?.call();
     }
   }
 
@@ -180,10 +193,20 @@ class UploadEngine {
 
   Future<void> _putSingle(String url, AppFile file, String ct, int size,
       String key, CancelToken token) async {
+    // Stream the body on native (avoids buffering the whole file, which used to
+    // OOM-kill the app on large mobile uploads). Dio's browser adapter can't
+    // stream a request body, so on web send the in-memory bytes as before.
+    final body = kIsWeb ? await file.readAsBytes() : file.openRead();
     await _r2.put(url,
-        data: await file.readAsBytes(),
+        data: body,
         cancelToken: token,
-        options: _putOptions(ct),
+        options: Options(
+          method: 'PUT',
+          headers: {
+            'Content-Type': ct,
+            'Content-Length': size.toString(),
+          },
+        ),
         onSendProgress: (s, t) => _emit(UploadProgress(
             key: key,
             filename: file.name,
@@ -191,6 +214,14 @@ class UploadEngine {
             bytesSent: s,
             total: size)));
   }
+
+  void _emitError(String key, String name, String? error) => _emit(UploadProgress(
+      key: key,
+      filename: name,
+      state: UploadState.error,
+      bytesSent: 0,
+      total: 0,
+      error: error));
 
   Future<void> _putMultipart(UploadInit init, AppFile file, String ct, int size,
       String key, CancelToken token) async {
@@ -206,10 +237,7 @@ class UploadEngine {
       }
       final start = (p - 1) * partSize;
       final end = (start + partSize < size) ? start + partSize : size;
-      // dio's browser adapter can't stream a request body, so send bytes;
-      // partSize bounds the memory per chunk.
-      // ponytail: single-file uploads buffer the whole file in RAM — switch to
-      // native openRead() per-platform if large-file mobile memory matters.
+      // Send bounded bytes per chunk; partSize caps the memory per chunk.
       final chunk = await file.readRange(start, end);
       final resp = await _r2.put(url!,
           data: chunk,

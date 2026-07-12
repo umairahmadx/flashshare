@@ -1,8 +1,9 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flashshare/api/storage_client.dart';
+import 'package:flashshare/files/app_file.dart';
 import 'package:flashshare/models.dart';
 import 'package:flashshare/storage/history_store.dart';
 import 'package:flashshare/upload/upload_engine.dart';
@@ -68,7 +69,7 @@ class FakeStorageClient implements StorageClient {
   Future<Collection> createCollection({int? expectedFileCount}) async {
     createCollectionCalls++;
     return Collection(
-      id: 'COL1', url: 'https://storage.to/c/COL1', ownerToken: 'owner_col');
+        id: 'COL1', url: 'https://storage.to/c/COL1', ownerToken: 'owner_col');
   }
 
   @override
@@ -77,13 +78,8 @@ class FakeStorageClient implements StorageClient {
   Future<void> deleteCollection(id, t) async {}
 }
 
-List<File> _tmpFiles(int n) {
-  final dir = Directory.systemTemp;
-  return List.generate(n, (i) {
-    final f = File('${dir.path}/fs_test_$i.txt')..writeAsBytesSync([1, 2, 3]);
-    return f;
-  });
-}
+List<AppFile> _tmpFiles(int n) => List.generate(
+    n, (i) => BytesFile('fs_test_$i.txt', Uint8List.fromList([1, 2, 3])));
 
 void main() {
   setUp(() {
@@ -91,22 +87,21 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  Future<UploadEngine> _engine(FakeStorageClient c) async => UploadEngine(
+  Future<UploadEngine> buildEngine(FakeStorageClient c) async => UploadEngine(
       c,
       HistoryStore(await SharedPreferences.getInstance()),
-      Dio()..interceptors.add(FakeR2Interceptor()),
-      () async => Directory.systemTemp);
+      Dio()..interceptors.add(FakeR2Interceptor()));
 
   test('separate mode uploads each file once', () async {
     final c = FakeStorageClient();
-    await (await _engine(c)).enqueue(_tmpFiles(3), UploadMode.separate);
+    await (await buildEngine(c)).enqueue(_tmpFiles(3), UploadMode.separate);
     expect(c.confirmCalls, 3);
     expect(c.confirmCollectionIds.where((x) => x != null), isEmpty);
   });
 
   test('collection mode creates one collection and attaches all files', () async {
     final c = FakeStorageClient();
-    await (await _engine(c)).enqueue(_tmpFiles(2), UploadMode.collection);
+    await (await buildEngine(c)).enqueue(_tmpFiles(2), UploadMode.collection);
     expect(c.createCollectionCalls, 1);
     expect(c.confirmCalls, 2);
     expect(c.confirmCollectionIds, everyElement('COL1'));
@@ -114,7 +109,7 @@ void main() {
 
   test('zip mode produces a single upload', () async {
     final c = FakeStorageClient();
-    await (await _engine(c)).enqueue(_tmpFiles(2), UploadMode.zip);
+    await (await buildEngine(c)).enqueue(_tmpFiles(2), UploadMode.zip);
     expect(c.confirmCalls, 1);
   });
 }

@@ -26,8 +26,13 @@ class HistoryStore {
   List<HistoryEntry> getAll() {
     final raw = _prefs.getString(_kHistory);
     if (raw == null) return [];
-    final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-    return list.map(HistoryEntry.fromJson).toList();
+    try {
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      return list.map(HistoryEntry.fromJson).toList();
+    } catch (_) {
+      // Corrupted prefs shouldn't crash the UI; start clean.
+      return [];
+    }
   }
 
   Future<void> add(HistoryEntry e) async {

@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/storage/history_store.dart';
 import 'package:flashshare/ui/home_page.dart';
@@ -15,8 +18,39 @@ ThemeMode _modeFrom(String s) =>
       _ => ThemeMode.system,
     };
 
-void main() async {
+// Global backstop: an uncaught error in a release build otherwise terminates
+// the whole process (the "app exits to home screen" symptom). Report it and
+// keep the app alive instead.
+void _reportError(Object error, StackTrace? stack) {
+  Fluttertoast.showToast(
+    msg: 'Something went wrong: $error',
+    toastLength: Toast.LENGTH_LONG,
+    gravity: ToastGravity.BOTTOM,
+  );
+  // ignore: avoid_print
+  print('[flashshare] uncaught error: $error\n$stack');
+}
+
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Catch framework errors (e.g. during build/layout).
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    _reportError(details.exception, details.stack);
+  };
+  // Catch async/zone errors that escape everything else.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    _reportError(error, stack);
+    return true; // handled — do not terminate the app.
+  };
+
+  runZonedGuarded(() {
+    _startApp();
+  }, _reportError);
+}
+
+Future<void> _startApp() async {
   final store = await HistoryStore.create();
   final settings = await SettingsStore.create();
   final token = await store.getVisitorToken();
