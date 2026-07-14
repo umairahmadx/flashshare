@@ -22,6 +22,11 @@ class AppColors {
   };
 
   static const Color collection = Color(0xFFFFB300); // amber
+
+  // QR codes must stay black-on-white to remain machine-scannable; these are
+  // fixed physical colors, not theme colors, but live here per the single-source rule.
+  static const Color qrForeground = Color(0xFF000000); // black
+  static const Color qrBackground = Color(0xFFFFFFFF); // white
 }
 
 /// Blue primary seed; sophisticated Material 3 theme.

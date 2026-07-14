@@ -1,17 +1,16 @@
-name: Build Android APKs
+name: Release Android APKs
 
 on:
   push:
-    branches: [master]
-  pull_request:
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
-    name: Build split APKs
+  release:
+    name: Build split APKs and publish release
     runs-on: ubuntu-latest
 
     steps:
@@ -40,13 +39,13 @@ jobs:
       - name: Build release APKs
         run: flutter build apk --release --split-per-abi
 
-      - name: Upload split APKs
-        uses: actions/upload-artifact@v4
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-*-release.apk dist/
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: flashshare-android-apks
-          path: |
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-            build/app/outputs/flutter-apk/app-x86_64-release.apk
-          if-no-files-found: error
-          retention-days: 30
+          files: dist/*.apk
+          generate_release_notes: true

@@ -119,13 +119,12 @@ class _HomePageState extends State<HomePage> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.bolt, color: Colors.white, size: 20),
+            Image.asset(
+              Theme.of(context).brightness == Brightness.dark
+                  ? 'assets/logo_dark.png'
+                  : 'assets/logo_light.png',
+              height: 28,
+              width: 28,
             ),
             const SizedBox(width: 12),
             Text(
@@ -305,7 +304,7 @@ class _UploadSection extends StatelessWidget {
           ],
         ),
         child: Material(
-          color: Colors.transparent,
+          color: scheme.surface.withValues(alpha: 0),
           child: InkWell(
             onTap: onPick,
             borderRadius: BorderRadius.circular(32),
@@ -317,7 +316,7 @@ class _UploadSection extends StatelessWidget {
                   child: Icon(
                     Icons.bolt,
                     size: 160,
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: scheme.onPrimary.withValues(alpha: 0.1),
                   ),
                 ),
                 Padding(
@@ -328,16 +327,16 @@ class _UploadSection extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: scheme.onPrimary.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+                        child: Icon(Icons.add_rounded, color: scheme.onPrimary, size: 28),
                       ),
                       const Spacer(),
-                      const Text(
+                      Text(
                         'Share New Files',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: scheme.onPrimary,
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
@@ -346,7 +345,7 @@ class _UploadSection extends StatelessWidget {
                       Text(
                         'Instant, secure, and ephemeral.',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: scheme.onPrimary.withValues(alpha: 0.8),
                           fontSize: 14,
                         ),
                       ),

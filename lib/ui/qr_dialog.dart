@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flashshare/ui/theme.dart';
 
 class QrDialog extends StatelessWidget {
   final String url;
@@ -36,7 +37,7 @@ class QrDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.qrBackground,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: QrImageView(
@@ -46,11 +47,11 @@ class QrDialog extends StatelessWidget {
               gapless: false,
               eyeStyle: const QrEyeStyle(
                 eyeShape: QrEyeShape.square,
-                color: Colors.black,
+                color: AppColors.qrForeground,
               ),
               dataModuleStyle: const QrDataModuleStyle(
                 dataModuleShape: QrDataModuleShape.square,
-                color: Colors.black,
+                color: AppColors.qrForeground,
               ),
             ),
             ),
