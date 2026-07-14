@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:pdf_render/pdf_render.dart';
+import 'package:pdfx/pdfx.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/files/app_file.dart';
@@ -289,12 +288,15 @@ class UploadEngine {
             : await PdfDocument.openData(await file.readAsBytes());
         try {
           final page = await doc.getPage(1);
-          final img = await page.render(width: 256, height: 256);
-          thumb = await img.createImageDetached().then((uiImg) =>
-              uiImg.toByteData(format: ImageByteFormat.png).then((bd) =>
-                  bd?.buffer.asUint8List()));
+          final pageImg = await page.render(
+            width: page.width / 2,
+            height: page.height / 2,
+            format: PdfPageImageFormat.jpeg,
+            quality: 75,
+          );
+          thumb = pageImg?.bytes;
         } finally {
-          await doc.dispose();
+          await doc.close();
         }
       }
 
