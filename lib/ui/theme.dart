@@ -23,6 +23,9 @@ class AppColors {
 
   static const Color collection = Color(0xFFFFB300); // amber
 
+  // Log levels. Error uses the theme's colorScheme.error; warnings get amber.
+  static const Color warning = Color(0xFFF59E0B); // amber
+
   // QR codes must stay black-on-white to remain machine-scannable; these are
   // fixed physical colors, not theme colors, but live here per the single-source rule.
   static const Color qrForeground = Color(0xFF000000); // black

@@ -6,3 +6,5 @@ import 'app_file.dart';
 // other caller) is mobile-only and guarded behind kIsWeb.
 AppFile fileFromPath(String path) =>
     throw UnsupportedError('fileFromPath is not supported on the web platform');
+
+bool fileExists(String path) => false;

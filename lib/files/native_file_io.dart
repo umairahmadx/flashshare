@@ -35,3 +35,7 @@ class _IoFile implements AppFile {
 }
 
 AppFile fileFromPath(String path) => _IoFile(File(path));
+
+/// Whether [path] points at a real file on disk. Used to tell a shared
+/// *text string* (which the plugin also puts in `path`) from a shared file.
+bool fileExists(String path) => File(path).existsSync();

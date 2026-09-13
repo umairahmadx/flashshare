@@ -48,7 +48,6 @@ class PartEtag {
 class FileRecord {
   final String id;
   final String url;
-  final String rawUrl;
   final String filename;
   final int size;
   final String? humanSize;
@@ -58,7 +57,6 @@ class FileRecord {
   FileRecord({
     required this.id,
     required this.url,
-    required this.rawUrl,
     required this.filename,
     required this.size,
     this.humanSize,
@@ -66,11 +64,12 @@ class FileRecord {
     required this.ownerToken,
   });
 
+  // Matches the live /upload/confirm response, which has no raw_url field
+  // (hard-casting it used to throw "type Null is not a subtype of String").
   factory FileRecord.fromJson(Map<String, dynamic> j, String ownerToken) {
     return FileRecord(
       id: j['id'] as String,
       url: j['url'] as String,
-      rawUrl: j['raw_url'] as String,
       filename: j['filename'] as String,
       size: j['size'] as int,
       humanSize: j['human_size'] as String?,
@@ -147,8 +146,21 @@ class HistoryEntry {
       );
 }
 
-String guessContentType(String filename) {
-  final ext = filename.contains('.')
+/// Human-readable byte size ("12.3 MB"), shared by the UI tiles and logs.
+String formatBytes(int bytes) {
+  if (bytes <= 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var v = bytes.toDouble();
+  var i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  final str = (i == 0 || v >= 100) ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+  return '$str ${units[i]}';
+}
+
+String guessContentType(String filename) {  final ext = filename.contains('.')
       ? filename.split('.').last.toLowerCase()
       : '';
   const map = {

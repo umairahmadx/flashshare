@@ -53,8 +53,12 @@ class HttpStorageClient implements StorageClient {
         options: Options(headers: _owner(ownerToken)),
         data: {'upload_id': uploadId, 'part_numbers': partNumbers});
     _assertOk(r);
-    final list = (r.data['part_urls'] as List).cast<Map<String, dynamic>>();
-    return {for (var p in list) p['partNumber'] as int: p['url'] as String};
+    // Live response: {"success": true, "urls": {"3": "https://..."}}
+    final urls = r.data['urls'] as Map;
+    return {
+      for (var e in urls.entries)
+        int.parse(e.key as String): e.value as String
+    };
   }
 
   @override

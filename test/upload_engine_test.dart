@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,31 +6,47 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/files/app_file.dart';
 import 'package:flashshare/models.dart';
+import 'package:flashshare/logs/log_store.dart';
 import 'package:flashshare/storage/history_store.dart';
 import 'package:flashshare/upload/upload_engine.dart';
 
-// Returns a 200 with a fake etag for every PUT (the R2 step), so the test
-// never hits the network.
+// Fakes every R2 PUT as a 200 with a fake etag, so the test never hits the
+// network. [reject] flips it to fail every PUT with a message-less
+// DioException (like a dropped connection) to exercise error reporting.
 class FakeR2Interceptor extends Interceptor {
+  final bool reject;
+  FakeR2Interceptor({this.reject = false});
+
   @override
   void onRequest(RequestOptions o, RequestInterceptorHandler h) {
-    h.resolve(Response(
-      requestOptions: o,
-      statusCode: 200,
-      headers: Headers.fromMap({'etag': ['"fake-etag"']}),
-    ));
+    if (reject) {
+      // No .message here — mirrors a network-level DioException.
+      h.reject(DioException(requestOptions: o));
+    } else {
+      h.resolve(Response(
+        requestOptions: o,
+        statusCode: 200,
+        headers: Headers.fromMap({'etag': ['"fake-etag"']}),
+      ));
+    }
   }
 }
 
 class FakeStorageClient implements StorageClient {
   int confirmCalls = 0;
+  int abortCalls = 0;
+  int completeMultipartCalls = 0;
   int createCollectionCalls = 0;
-  List<String?> confirmCollectionIds = [];
   int initCalls = 0;
+  Object? initError; // when set, uploadInit throws
+  UploadInit? initOverride; // when set, used instead of the default single init
+  final List<String?> confirmCollectionIds = [];
 
   @override
   Future<UploadInit> uploadInit(String f, String ct, int size) async {
     initCalls++;
+    if (initError != null) throw initError!;
+    if (initOverride != null) return initOverride!;
     return UploadInit(
       type: 'single',
       uploadUrl: 'https://r2.example/x',
@@ -40,10 +57,14 @@ class FakeStorageClient implements StorageClient {
 
   @override
   Future<Map<int, String>> uploadParts(u, p, t) async => {};
+
   @override
-  Future<void> uploadCompleteMultipart(u, p, t) async {}
+  Future<void> uploadCompleteMultipart(u, p, t) async {
+    completeMultipartCalls++;
+  }
+
   @override
-  Future<void> uploadAbort(u, t) async {}
+  Future<void> uploadAbort(u, t) async => abortCalls++;
 
   @override
   Future<FileRecord> uploadConfirm({
@@ -58,7 +79,6 @@ class FakeStorageClient implements StorageClient {
     return FileRecord(
       id: 'FQ$confirmCalls',
       url: 'https://storage.to/FQ$confirmCalls',
-      rawUrl: 'https://storage.to/r/FQ$confirmCalls',
       filename: filename,
       size: size,
       ownerToken: 'owner_$confirmCalls',
@@ -78,30 +98,66 @@ class FakeStorageClient implements StorageClient {
   Future<void> deleteCollection(id, t) async {}
 }
 
-List<AppFile> _tmpFiles(int n) => List.generate(
-    n, (i) => BytesFile('fs_test_$i.txt', Uint8List.fromList([1, 2, 3])));
+/// A file whose read fails, to force a zip-build failure.
+class ExplodingFile implements AppFile {
+  @override
+  String get name => 'boom.txt';
+  @override
+  String? get path => null;
+  @override
+  Future<int> getSize() async => 3;
+  @override
+  Future<Uint8List> readAsBytes() async => throw Exception('disk on fire');
+  @override
+  Future<Uint8List> readRange(int s, int e) async =>
+      Uint8List.fromList([1, 2, 3]);
+  @override
+  Stream<List<int>> openRead([int? s, int? e]) => const Stream.empty();
+}
+
+AppFile _f(String name, [int len = 3]) =>
+    BytesFile(name, Uint8List.fromList(List.filled(len, 1)));
 
 void main() {
-  setUp(() {
+  late SharedPreferences prefs;
+
+  setUp(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
   });
 
-  Future<UploadEngine> buildEngine(FakeStorageClient c) async => UploadEngine(
-      c,
-      HistoryStore(await SharedPreferences.getInstance()),
-      Dio()..interceptors.add(FakeR2Interceptor()));
+  UploadEngine makeEngine(FakeStorageClient c, FakeR2Interceptor r2,
+      {void Function()? onIdle}) {
+    final e = UploadEngine(c, HistoryStore(prefs), Dio()..interceptors.add(r2));
+    if (onIdle != null) e.onIdle = onIdle;
+    return e;
+  }
+
+  UploadInit multipartInit() => UploadInit(
+        type: 'multipart',
+        uploadId: 'uid-1',
+        r2Key: 'rk-mp',
+        partSize: 2,
+        totalParts: 2,
+        ownerToken: 'otok',
+        // Only part 1 is pre-signed; part 2 must be fetched via uploadParts.
+        initialUrls: {'1': 'https://r2.example/p1'},
+      );
 
   test('separate mode uploads each file once', () async {
     final c = FakeStorageClient();
-    await (await buildEngine(c)).enqueue(_tmpFiles(3), UploadMode.separate);
+    await makeEngine(c, FakeR2Interceptor())
+        .enqueue([_f('a.txt'), _f('b.txt'), _f('c.txt')], UploadMode.separate);
     expect(c.confirmCalls, 3);
     expect(c.confirmCollectionIds.where((x) => x != null), isEmpty);
   });
 
-  test('collection mode creates one collection and attaches all files', () async {
+  test('collection mode creates one collection and attaches all files',
+      () async {
     final c = FakeStorageClient();
-    await (await buildEngine(c)).enqueue(_tmpFiles(2), UploadMode.collection);
+    await makeEngine(c, FakeR2Interceptor())
+        .enqueue([_f('a.txt'), _f('b.txt')], UploadMode.collection);
     expect(c.createCollectionCalls, 1);
     expect(c.confirmCalls, 2);
     expect(c.confirmCollectionIds, everyElement('COL1'));
@@ -109,7 +165,106 @@ void main() {
 
   test('zip mode produces a single upload', () async {
     final c = FakeStorageClient();
-    await (await buildEngine(c)).enqueue(_tmpFiles(2), UploadMode.zip);
+    await makeEngine(c, FakeR2Interceptor())
+        .enqueue([_f('a.txt'), _f('b.txt')], UploadMode.zip);
     expect(c.confirmCalls, 1);
   });
+
+  test('a failed multipart upload aborts the server-side upload', () async {
+    final c = FakeStorageClient()..initOverride = multipartInit();
+    final events = <UploadProgress>[];
+    final engine = makeEngine(c, FakeR2Interceptor());
+    engine.progress.listen(events.add);
+    // Part 2 has no pre-signed URL and uploadParts returns {} — the upload
+    // must fail, report an error, and call uploadAbort to clean up R2 state.
+    await engine.enqueue([_f('big.bin', 4)], UploadMode.separate);
+    await pumpEventQueue();
+    expect(c.abortCalls, 1,
+        reason: 'a failed multipart must call uploadAbort to clean up');
+    expect(c.completeMultipartCalls, 0);
+    final err = events.lastWhere((p) => p.state == UploadState.error);
+    expect(err.error, isNotNull);
+    expect(err.error, isNotEmpty);
+  });
+
+  test('cancelling a multipart upload aborts it server-side', () async {
+    final c = FakeStorageClient()..initOverride = multipartInit();
+    final states = <UploadState>[];
+    final engine = makeEngine(c, FakeR2Interceptor());
+    // Cancel as soon as the upload is announced (before the first part PUT).
+    engine.progress.listen((p) {
+      states.add(p.state);
+      if (p.state == UploadState.queued) engine.cancel(p.key);
+    });
+    await engine.enqueue([_f('big.bin', 4)], UploadMode.separate);
+    await pumpEventQueue();
+    expect(states, contains(UploadState.cancelled));
+    expect(states, isNot(contains(UploadState.done)));
+    expect(c.abortCalls, 1,
+        reason: 'a cancelled multipart must call uploadAbort');
+  });
+
+  test('onIdle fires exactly once for a multi-file batch, not per file',
+      () async {
+    final c = FakeStorageClient();
+    var idle = 0;
+    await makeEngine(c, FakeR2Interceptor(), onIdle: () => idle++)
+        .enqueue([_f('a.txt'), _f('b.txt'), _f('c.txt')], UploadMode.separate);
+    expect(idle, 1, reason: 'the service must stop once after the whole batch');
+  });
+
+  test('onIdle fires when the zip build fails', () async {
+    final c = FakeStorageClient();
+    var idle = 0;
+    await makeEngine(c, FakeR2Interceptor(), onIdle: () => idle++)
+        .enqueue([_f('a.txt'), _f('b.txt'), ExplodingFile()], UploadMode.zip);
+    expect(idle, 1, reason: 'a failed zip must still stop the service');
+    expect(c.initCalls, 0);
+  });
+
+  test('onIdle fires when collection creation fails', () async {
+    final c = _ThrowingClient();
+    var idle = 0;
+    final engine = UploadEngine(c, HistoryStore(prefs),
+        Dio()..interceptors.add(FakeR2Interceptor()));
+    engine.onIdle = () => idle++;
+    await engine.enqueue([_f('a.txt'), _f('b.txt')], UploadMode.collection);
+    expect(idle, 1, reason: 'a failed collection create must stop the service');
+    expect(c.confirmCalls, 0);
+  });
+
+  test('a PUT failure reports a readable error, never a null message',
+      () async {
+    final c = FakeStorageClient();
+    final events = <UploadProgress>[];
+    final engine = makeEngine(c, FakeR2Interceptor(reject: true));
+    engine.progress.listen(events.add);
+    await engine.enqueue([_f('a.txt')], UploadMode.separate);
+    await pumpEventQueue();
+    final err = events.lastWhere((p) => p.state == UploadState.error);
+    expect(err.error, isNotNull,
+        reason: 'DioException.message can be null; the tile must not show '
+            'an empty "Error: "');
+    expect(err.error, isNotEmpty);
+  });
+
+  test('failed uploads are written to the log store', () async {
+    final c = FakeStorageClient()..initError = StorageException('boom');
+    final logStore = await LogStore.create();
+    final engine = makeEngine(c, FakeR2Interceptor());
+    await engine.enqueue([_f('a.txt')], UploadMode.separate);
+    await pumpEventQueue();
+    final errors =
+        logStore.entries.where((e) => e.level == LogLevel.error);
+    expect(errors, isNotEmpty,
+        reason: 'an upload failure must land in the log store');
+    expect(errors.last.message, contains('boom'));
+  });
+}
+
+class _ThrowingClient extends FakeStorageClient {
+  @override
+  Future<Collection> createCollection({int? expectedFileCount}) async {
+    throw StateError('server says no');
+  }
 }

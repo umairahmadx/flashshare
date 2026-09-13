@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
-export 'native_file_stub.dart' if (dart.library.io) 'native_file_io.dart';
+export 'native_file_stub.dart' if (dart.library.io) 'native_file_io.dart'
+    show fileFromPath, fileExists;
 
 /// Platform-neutral handle to a file's contents.
 ///

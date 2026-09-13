@@ -1,8 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:flashshare/models.dart';
-import 'package:flashshare/ui/theme.dart';
+import 'package:flashshare/models.dart';import 'package:flashshare/ui/theme.dart';
 import 'package:flashshare/ui/qr_dialog.dart';
 import 'package:flashshare/upload/upload_engine.dart';
 
@@ -37,25 +36,14 @@ import 'package:flashshare/upload/upload_engine.dart';
   }
 }
 
-String formatBytes(int bytes) {
-  if (bytes <= 0) return '—';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  var v = bytes.toDouble();
-  var i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  final str = (i == 0 || v >= 100) ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
-  return '$str ${units[i]}';
-}
-
 String? expiryText(String? expiresAt) {
   if (expiresAt == null) return null;
   final d = DateTime.tryParse(expiresAt);
   if (d == null) return null;
+  // isBefore, not inDays: an expiry 2h ago must read "Expired", not
+  // "Expires today" (inDays truncates toward zero).
+  if (d.isBefore(DateTime.now())) return 'Expired';
   final days = d.difference(DateTime.now()).inDays;
-  if (days < 0) return 'Expired';
   if (days == 0) return 'Expires today';
   return 'Expires in $days d';
 }
@@ -99,7 +87,8 @@ class HistoryTile extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: visuals.color.withValues(alpha: 0.1),
                       ),
-                      child: _ThumbnailOrIcon(url: e.url, visuals: visuals),
+                      child: _ThumbnailOrIcon(
+                          url: e.url, filename: e.filename, visuals: visuals),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -171,14 +160,24 @@ class HistoryTile extends StatelessWidget {
 
 class _ThumbnailOrIcon extends StatelessWidget {
   final String url;
+  final String filename;
   final ({IconData icon, Color color}) visuals;
 
-  const _ThumbnailOrIcon({required this.url, required this.visuals});
+  const _ThumbnailOrIcon(
+      {required this.url, required this.filename, required this.visuals});
 
   @override
   Widget build(BuildContext context) {
-    // Check if the URL likely points to a file type we might have a thumbnail for.
-    // The UploadEngine caches thumbnails for images, videos, and PDFs under their final URL.
+    // UploadEngine caches local thumbnails for images, videos, and PDFs
+    // (under the file's final URL). For anything else, going through
+    // CachedNetworkImage just fires a doomed network request per tile.
+    final ext = filename.contains('.')
+        ? filename.split('.').last.toLowerCase()
+        : '';
+    final thumbable = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'pdf'];
+    if (!thumbable.contains(ext)) {
+      return Icon(visuals.icon, color: visuals.color, size: 24);
+    }
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
@@ -256,7 +255,10 @@ class ActiveTile extends StatelessWidget {
                       color: visuals.color.withValues(alpha: 0.1),
                     ),
                     child: p.url != null 
-                        ? _ThumbnailOrIcon(url: p.url!, visuals: visuals)
+                        ? _ThumbnailOrIcon(
+                            url: p.url!,
+                            filename: p.filename,
+                            visuals: visuals)
                         : Icon(visuals.icon, color: visuals.color, size: 20),
                   ),
                 ),

@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flashshare/files/app_file.dart';
+import 'package:flashshare/logs/log_store.dart';
 import 'package:flashshare/models.dart';
 import 'package:flashshare/share/share_handler.dart';
 import 'package:flashshare/storage/history_store.dart';
 import 'package:flashshare/ui/multi_file_dialog.dart';
+import 'package:flashshare/ui/logs_screen.dart';
 import 'package:flashshare/ui/settings_store.dart';
 import 'package:flashshare/ui/settings_tab.dart';
 import 'package:flashshare/ui/toast.dart';
@@ -18,12 +20,14 @@ class HomePage extends StatefulWidget {
   final HistoryStore store;
   final SettingsStore settings;
   final UploadEngine engine;
+  final LogStore logs;
   final void Function(ThemeMode mode) onThemeMode;
   const HomePage(
       {super.key,
       required this.store,
       required this.settings,
       required this.engine,
+      required this.logs,
       required this.onThemeMode});
 
   @override
@@ -55,10 +59,18 @@ class _HomePageState extends State<HomePage> {
     _share.init();
   }
 
+  @override
+  void dispose() {
+    _share.dispose();
+    super.dispose();
+  }
+
   Future<void> _pick() async {
     final res = await FilePicker.pickFiles(allowMultiple: true, withData: kIsWeb);
     if (res == null) return;
-    final files = res.files.map((pf) {
+    final files = res.files
+        .where((pf) => pf.bytes != null || (pf.path != null && pf.path!.isNotEmpty))
+        .map((pf) {
       if (pf.bytes != null) return BytesFile(pf.name, pf.bytes!);
       return fileFromPath(pf.path!);
     }).toList();
@@ -134,6 +146,12 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.terminal_outlined),
+            tooltip: 'Logs',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => LogsScreen(store: widget.logs))),
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () {

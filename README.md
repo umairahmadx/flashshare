@@ -35,6 +35,9 @@ a copyable, shareable link — no account, no sign-up, no friction.
 - **Background uploads (Android)** — a foreground service keeps uploads alive
   when the app is minimized. Best-effort, never fatal if unavailable.
 - **Theming** — Material 3, system / light / dark, single source of color truth.
+- **In-app log screen** — general / warning / error logs with real stack
+  traces, per-entry and copy-all buttons, filters, and clear. Logs persist
+  across restarts (capped) so crash causes stay visible.
 - **Crash-resilient** — uncaught errors are caught app-wide and reported via a
   toast instead of terminating the process.
 
@@ -227,12 +230,26 @@ flutter test
 
 What's covered (lightweight, `flutter test` only — no framework):
 
+- `api_contract_test.dart` — locks the client to the live storage.to JSON
+  shapes (`/upload/confirm` has no `raw_url`; `/upload/parts` returns
+  `{urls: {"3": …}}`), plus the `success:false` → `StorageException` path.
 - `upload_engine_test.dart` — full upload flow with a faked R2 `PUT`
   (always 200 + fake etag) and a fake `StorageClient`; verifies confirm /
-  collection calls and history writes.
+  collection calls, multipart **abort on failure and cancel**, one
+  `onIdle` per batch (foreground service stops once, not per file), idle on
+  zip/collection failures, and readable error messages.
+- `share_handler_test.dart` — text/url shares are dropped (only real files
+  enqueue), initial media is `reset()` after consumption (no replayed
+  shares), and share-stream errors are handled, not fatal.
 - `history_store_test.dart` — visitor token persists across store reloads;
   add → remove round-trips.
 - `models_test.dart` — `guessContentType` maps common extensions.
+- `expiry_text_test.dart` — expiry label: past → "Expired" (not "Expires
+  today"), later today, N days, and null/unparseable.
+- `log_store_test.dart` — log levels round-trip, stacks preserved,
+  persistence + 200-entry cap, notify on add/clear, copy formatting.
+- `logs_screen_test.dart` — renders entries, filter chips, expand stack,
+  copy-to-clipboard, clear.
 - `colors_centralized_test.dart` — static check enforcing that **no color
   literals** (`Colors.x`, `Color(0x…)`, `0x…`) exist outside
   `lib/ui/theme.dart` (`AppColors` is the single source of color truth).

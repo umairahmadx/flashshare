@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show PlatformDispatcher;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // added for BindingBase
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flashshare/api/storage_client.dart';
+import 'package:flashshare/logs/log_store.dart';
 import 'package:flashshare/storage/history_store.dart';
 import 'package:flashshare/ui/home_page.dart';
 import 'package:flashshare/ui/settings_store.dart';
@@ -20,8 +21,9 @@ ThemeMode _modeFrom(String s) =>
 
 // Global backstop: an uncaught error in a release build otherwise terminates
 // the whole process (the "app exits to home screen" symptom). Report it and
-// keep the app alive instead.
+// keep the app alive instead. Everything lands in the in-app log screen too.
 void _reportError(Object error, StackTrace? stack) {
+  LogStore.instanceOrNull?.error('Unhandled: $error', stack: stack);
   Fluttertoast.showToast(
     msg: 'Something went wrong: $error',
     toastLength: Toast.LENGTH_LONG,
@@ -32,7 +34,6 @@ void _reportError(Object error, StackTrace? stack) {
 }
 
 void main() {
-  BindingBase.debugZoneErrorsAreFatal = true;
   runZonedGuarded(() {
     WidgetsFlutterBinding.ensureInitialized();
 
@@ -47,6 +48,8 @@ void main() {
       return true; // handled — do not terminate the app.
     };
 
+    // Startup failures (bad prefs, plugin init) must surface, not vanish
+    // into an unhandled future that leaves a black screen.
     _startApp();
   }, _reportError);
 }
@@ -54,7 +57,9 @@ void main() {
 Future<void> _startApp() async {
   final store = await HistoryStore.create();
   final settings = await SettingsStore.create();
+  final logs = await LogStore.create();
   final token = await store.getVisitorToken();
+  logs.info('App started');
   final apiDio = Dio(BaseOptions(
     baseUrl: 'https://storage.to/api',
     validateStatus: (_) => true,
@@ -69,6 +74,7 @@ Future<void> _startApp() async {
     store: store,
     settings: settings,
     engine: engine,
+    logs: logs,
     initialMode: initialMode,
   ));
 }
@@ -77,12 +83,14 @@ class FlashShareApp extends StatefulWidget {
   final HistoryStore store;
   final SettingsStore settings;
   final UploadEngine engine;
+  final LogStore logs;
   final ThemeMode initialMode;
   const FlashShareApp(
       {super.key,
       required this.store,
       required this.settings,
       required this.engine,
+      required this.logs,
       required this.initialMode});
 
   @override
@@ -110,6 +118,7 @@ class _FlashShareAppState extends State<FlashShareApp> {
           store: widget.store,
           settings: widget.settings,
           engine: widget.engine,
+          logs: widget.logs,
           onThemeMode: _setMode,
         ),
       );

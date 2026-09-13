@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io' show Platform;
@@ -5,7 +6,10 @@ import 'dart:io' show Platform;
 const _notificationChannelId = 'flashshare_uploads';
 
 /// Configure the Android foreground service. Call once at startup (main).
+/// No-op on web: the plugin has no web implementation and its platform
+/// instance getter *throws* there, which used to kill the app at startup.
 Future<void> configureBackgroundService() async {
+  if (kIsWeb) return;
   final service = FlutterBackgroundService();
   await service.configure(
     androidConfiguration: AndroidConfiguration(
@@ -38,6 +42,7 @@ void _onStart(ServiceInstance service) {
 /// is called before enqueue and from the idle callback, so a throw there would
 /// escape a `finally` and crash the app.
 Future<void> startUploadService() async {
+  if (kIsWeb) return;
   try {
     // On Android 13+ (API 33), POST_NOTIFICATIONS is a runtime permission
     // required to show the foreground service notification. Request it first.
@@ -59,6 +64,7 @@ Future<void> startUploadService() async {
 /// `UploadEngine.onIdle`, which runs inside a `finally` block, so any exception
 /// here would escape the upload and terminate the process.
 void stopUploadService() {
+  if (kIsWeb) return;
   try {
     FlutterBackgroundService().invoke('stop');
   } catch (_) {

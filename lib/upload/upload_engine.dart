@@ -7,6 +7,7 @@ import 'package:pdfx/pdfx.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:flashshare/api/storage_client.dart';
 import 'package:flashshare/files/app_file.dart';
+import 'package:flashshare/logs/log_store.dart';
 import 'package:flashshare/models.dart';
 import 'package:flashshare/storage/history_store.dart';
 
@@ -52,46 +53,52 @@ class UploadEngine {
 
   Future<void> enqueue(List<AppFile> files, UploadMode mode) async {
     if (files.isEmpty) return;
-    if (mode == UploadMode.zip) {
-      AppFile zip;
-      try {
-        zip = await _buildZip(files);
-      } catch (e) {
-        _emitError('flashshare.zip', 'flashshare.zip', 'Failed to build zip: $e');
+    // One active-batch counter for the whole enqueue, so the idle callback
+    // (which stops the foreground service) fires once when the whole batch
+    // drains — not after every single file.
+    _active++;
+    try {
+      if (mode == UploadMode.zip) {
+        AppFile zip;
+        try {
+          zip = await _buildZip(files);
+        } catch (e) {
+          _emitError('flashshare.zip', 'flashshare.zip', 'Failed to build zip: $e');
+          return;
+        }
+        await _uploadOne(zip);
         return;
       }
-      _active++;
-      await _uploadOne(zip);
-      return;
-    }
-    if (mode == UploadMode.collection) {
-      Collection col;
-      try {
-        col = await _client.createCollection(expectedFileCount: files.length);
-        await _store.add(HistoryEntry(
-          kind: 'collection',
-          id: col.id,
-          url: col.url,
-          filename: 'Collection (${files.length} files)',
-          size: 0,
-          expiresAt: col.expiresAt,
-          ownerToken: col.ownerToken,
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-        ));
-      } catch (e) {
-        _emitError(
-            'collection', 'Collection', 'Failed to create collection: $e');
+      if (mode == UploadMode.collection) {
+        Collection col;
+        try {
+          col = await _client.createCollection(expectedFileCount: files.length);
+          await _store.add(HistoryEntry(
+            kind: 'collection',
+            id: col.id,
+            url: col.url,
+            filename: 'Collection (${files.length} files)',
+            size: 0,
+            expiresAt: col.expiresAt,
+            ownerToken: col.ownerToken,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ));
+        } catch (e) {
+          _emitError(
+              'collection', 'Collection', 'Failed to create collection: $e');
+          return;
+        }
+        for (final f in files) {
+          await _uploadOne(f, collectionId: col.id);
+        }
         return;
       }
       for (final f in files) {
-        _active++;
-        await _uploadOne(f, collectionId: col.id);
+        await _uploadOne(f);
       }
-      return;
-    }
-    for (final f in files) {
-      _active++;
-      await _uploadOne(f);
+    } finally {
+      _active--;
+      if (_active == 0) onIdle?.call();
     }
   }
 
@@ -109,18 +116,21 @@ class UploadEngine {
   Future<void> _uploadOne(AppFile file, {String? collectionId}) async {
     final key = '${_seq++}:${file.name}';
     final name = file.name;
-    final ct = guessContentType(name);
-    final size = await file.getSize();
+    UploadInit? init;
+    int size = 0;
     final token = CancelToken();
     _cancellers[key] = token;
     try {
+      size = await file.getSize();
+      LogStore.instanceOrNull?.info('Uploading "$name" (${formatBytes(size)})');
       _emit(UploadProgress(
           key: key,
           filename: name,
           state: UploadState.queued,
           bytesSent: 0,
           total: size));
-      final init = await _client.uploadInit(name, ct, size);
+      final ct = guessContentType(name);
+      init = await _client.uploadInit(name, ct, size);
       if (init.type == 'single') {
         await _putSingle(init.uploadUrl!, file, ct, size, key, token);
       } else {
@@ -161,8 +171,20 @@ class UploadEngine {
           bytesSent: size,
           total: size,
           url: rec.url));
+      LogStore.instanceOrNull?.info('Uploaded "$name" -> ${rec.url}');
     } on DioException catch (e) {
-      if (e.type == DioExceptionType.cancel) {
+      final cancelled = e.type == DioExceptionType.cancel;
+      // A half-finished multipart upload holds server-side state (and
+      // quota); it must be aborted on cancel and on any failure.
+      if (init != null && init.type == 'multipart') {
+        try {
+          await _client.uploadAbort(init.uploadId!, init.ownerToken!);
+        } catch (_) {
+          // Best-effort cleanup; the server expires stale uploads anyway.
+        }
+      }
+      if (cancelled) {
+        LogStore.instanceOrNull?.warning('Upload of "$name" cancelled');
         _emit(UploadProgress(
             key: key,
             filename: name,
@@ -170,15 +192,26 @@ class UploadEngine {
             bytesSent: 0,
             total: size));
       } else {
+        final msg = e.message ?? 'Network error (${e.type.name})';
+        LogStore.instanceOrNull
+            ?.error('Upload of "$name" failed: $msg', stack: e.stackTrace);
         _emit(UploadProgress(
             key: key,
             filename: name,
             state: UploadState.error,
             bytesSent: 0,
             total: size,
-            error: e.message));
+            error: msg));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // Non-Dio failures mid-multipart (e.g. a bad part URL) must also abort.
+      if (init != null && init.type == 'multipart') {
+        try {
+          await _client.uploadAbort(init.uploadId!, init.ownerToken!);
+        } catch (_) {}
+      }
+      LogStore.instanceOrNull
+          ?.error('Upload of "$name" failed: $e', stack: st);
       _emit(UploadProgress(
           key: key,
           filename: name,
@@ -188,8 +221,6 @@ class UploadEngine {
           error: e.toString()));
     } finally {
       _cancellers.remove(key);
-      _active--;
-      if (_active == 0) onIdle?.call();
     }
   }
 
@@ -223,13 +254,17 @@ class UploadEngine {
             total: size)));
   }
 
-  void _emitError(String key, String name, String? error) => _emit(UploadProgress(
+  void _emitError(String key, String name, String? error) {
+    LogStore.instanceOrNull?.error(error ?? 'Unknown error');
+    _emit(UploadProgress(
       key: key,
       filename: name,
       state: UploadState.error,
       bytesSent: 0,
       total: 0,
-      error: error));
+      error: error,
+    ));
+  }
 
   Future<void> _putMultipart(UploadInit init, AppFile file, String ct, int size,
       String key, CancelToken token) async {
@@ -242,12 +277,15 @@ class UploadEngine {
       if (url == null) {
         final got = await _client.uploadParts(init.uploadId!, [p], init.ownerToken!);
         url = got[p];
+        if (url == null) {
+          throw StateError('No presigned URL for part $p');
+        }
       }
       final start = (p - 1) * partSize;
       final end = (start + partSize < size) ? start + partSize : size;
       // Send bounded bytes per chunk; partSize caps the memory per chunk.
       final chunk = await file.readRange(start, end);
-      final resp = await _r2.put(url!,
+      final resp = await _r2.put(url,
           data: chunk,
           cancelToken: token,
           options: _putOptions(ct),
@@ -304,7 +342,7 @@ class UploadEngine {
         await DefaultCacheManager().putFile(url, thumb, fileExtension: 'jpg');
       }
     } catch (e) {
-      debugPrint('Thumbnail caching failed: $e');
+      LogStore.instanceOrNull?.warning('Thumbnail caching failed: $e');
     }
   }
 }
