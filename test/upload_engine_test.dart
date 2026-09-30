@@ -96,6 +96,23 @@ class FakeStorageClient implements StorageClient {
   Future<void> deleteFile(id, t) async {}
   @override
   Future<void> deleteCollection(id, t) async {}
+
+  int setPasswordCalls = 0;
+  int removePasswordCalls = 0;
+  final List<int?> expiryDaysSet = [];
+  final List<int?> maxDownloadsSet = [];
+  @override
+  Future<void> setPassword(kind, id, password, t) async => setPasswordCalls++;
+  @override
+  Future<void> removePassword(kind, id, t) async => removePasswordCalls++;
+  @override
+  Future<void> setExpiry(kind, id, days, t) async => expiryDaysSet.add(days);
+  @override
+  Future<void> setMaxDownloads(kind, id, m, t) async => maxDownloadsSet.add(m);
+  @override
+  Future<void> uploadThumbnail(id, bytes, t) async {}
+  @override
+  Future<Map<String, dynamic>> bandwidthStatus() async => {};
 }
 
 /// A file whose read fails, to force a zip-build failure.
@@ -151,6 +168,41 @@ void main() {
         .enqueue([_f('a.txt'), _f('b.txt'), _f('c.txt')], UploadMode.separate);
     expect(c.confirmCalls, 3);
     expect(c.confirmCollectionIds.where((x) => x != null), isEmpty);
+  });
+
+  test('share options are applied after a standalone upload', () async {
+    final c = FakeStorageClient();
+    await makeEngine(c, FakeR2Interceptor()).enqueue([_f('a.txt')],
+        UploadMode.separate,
+        options: const ShareOptions(password: 'pass1234', expiryDays: 7, maxDownloads: 3));
+    expect(c.setPasswordCalls, 1);
+    expect(c.expiryDaysSet, [7]);
+    expect(c.maxDownloadsSet, [3]);
+  });
+
+  test('collection options are applied once on the collection, not per file',
+      () async {
+    final c = FakeStorageClient();
+    await makeEngine(c, FakeR2Interceptor()).enqueue([_f('a.txt'), _f('b.txt')],
+        UploadMode.collection,
+        options: const ShareOptions(expiryDays: 5));
+    // One expiry call on the collection; files inherit it.
+    expect(c.expiryDaysSet, [5]);
+    expect(c.setPasswordCalls, 0);
+  });
+
+  test('applyOptions removes the password when it was locked and now null',
+      () async {
+    final c = FakeStorageClient();
+    final engine = makeEngine(c, FakeR2Interceptor());
+    await engine.enqueue([_f('a.txt')], UploadMode.separate,
+        options: const ShareOptions(password: 'pass1234'));
+    final locked = HistoryStore(prefs).getAll().single;
+    expect(locked.locked, isTrue);
+    await engine.applyOptions(locked, const ShareOptions());
+    final unlocked = HistoryStore(prefs).getAll().single;
+    expect(unlocked.locked, isFalse);
+    expect(c.removePasswordCalls, 1);
   });
 
   test('collection mode creates one collection and attaches all files',

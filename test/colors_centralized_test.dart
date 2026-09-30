@@ -3,8 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flashshare/ui/theme.dart';
 
 void main() {
-  test('AppColors.brand is blue', () {
-    expect(AppColors.brand.toARGB32(), 0xFF1565FF);
+  test('AppColors.brand is monochrome ink', () {
+    expect(AppColors.brand.toARGB32(), 0xFF0A0A0A);
+  });
+
+  test('InkPalette resolves without a FlashShare theme (safe in tests)', () {
+    expect(InkPalette.dark.accent.toARGB32(), 0xFFF2F2F2);
+    expect(InkPalette.light.accent.toARGB32(), 0xFF0A0A0A);
+    expect(InkPalette.dark.bg.toARGB32(), 0xFF000000);
   });
 
   test('no hard-coded color literals outside lib/ui/theme.dart', () {

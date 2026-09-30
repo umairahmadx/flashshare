@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flashshare/models.dart';
 
 abstract class StorageClient {
@@ -18,6 +19,17 @@ abstract class StorageClient {
   Future<Collection> createCollection({int? expectedFileCount});
   Future<void> deleteFile(String id, String ownerToken);
   Future<void> deleteCollection(String id, String ownerToken);
+
+  // Owner-only share settings. Same shape for files and collections.
+  Future<void> setPassword(
+      String kind, String id, String password, String ownerToken);
+  Future<void> removePassword(String kind, String id, String ownerToken);
+  Future<void> setExpiry(String kind, String id, int? days, String ownerToken);
+  Future<void> setMaxDownloads(
+      String kind, String id, int? maxDownloads, String ownerToken);
+  Future<void> uploadThumbnail(
+      String id, Uint8List bytes, String ownerToken);
+  Future<Map<String, dynamic>> bandwidthStatus();
 }
 
 class HttpStorageClient implements StorageClient {
@@ -128,6 +140,68 @@ class HttpStorageClient implements StorageClient {
     final r = await _dio.delete('/collection/$id',
         options: Options(headers: _owner(ownerToken)));
     _assertOk(r);
+  }
+
+  // 'file' or 'collection' — the settings endpoints mirror each other exactly,
+  // so one private helper serves both.
+  String _path(String kind, String id) =>
+      kind == 'collection' ? '/collection/$id' : '/file/$id';
+
+  @override
+  Future<void> setPassword(
+      String kind, String id, String password, String ownerToken) async {
+    final r = await _dio.post('${_path(kind, id)}/password',
+        options: Options(headers: _owner(ownerToken)),
+        data: {'password': password});
+    _assertOk(r);
+  }
+
+  @override
+  Future<void> removePassword(String kind, String id, String ownerToken) async {
+    final r = await _dio.delete('${_path(kind, id)}/password',
+        options: Options(headers: _owner(ownerToken)));
+    _assertOk(r);
+  }
+
+  @override
+  Future<void> setExpiry(String kind, String id, int? days, String ownerToken) async {
+    final r = await _dio.post('${_path(kind, id)}/expiry',
+        options: Options(headers: _owner(ownerToken)),
+        data: days == null ? {} : {'days': days});
+    _assertOk(r);
+  }
+
+  @override
+  Future<void> setMaxDownloads(
+      String kind, String id, int? maxDownloads, String ownerToken) async {
+    final r = await _dio.post('${_path(kind, id)}/max-downloads',
+        options: Options(headers: _owner(ownerToken)),
+        data: maxDownloads == null
+            ? {}
+            : {'max_downloads': maxDownloads});
+    _assertOk(r);
+  }
+
+  @override
+  Future<void> uploadThumbnail(
+      String id, Uint8List bytes, String ownerToken) async {
+    final r = await _dio.post('/file/$id/thumbnail',
+        options: Options(
+          headers: {'Authorization': 'Owner $ownerToken'},
+          contentType: 'image/jpeg',
+        ),
+        data: FormData.fromMap({
+          'thumbnail': MultipartFile.fromBytes(bytes, filename: 'thumb.jpg'),
+        }));
+    _assertOk(r);
+  }
+
+  @override
+  Future<Map<String, dynamic>> bandwidthStatus() async {
+    final r = await _dio.get('/bandwidth/status',
+        options: Options(headers: _visitorHeaders));
+    _assertOk(r);
+    return Map<String, dynamic>.from(r.data as Map);
   }
 
   void _assertOk(Response r) {

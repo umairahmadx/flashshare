@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flashshare/logs/log_store.dart';
 import 'package:flashshare/models.dart';
 
 class HistoryStore {
@@ -29,8 +30,11 @@ class HistoryStore {
     try {
       final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
       return list.map(HistoryEntry.fromJson).toList();
-    } catch (_) {
-      // Corrupted prefs shouldn't crash the UI; start clean.
+    } catch (e) {
+      // Corrupted prefs shouldn't crash the UI; start clean — but say so,
+      // because "my history disappeared" is otherwise undiagnosable.
+      AppLog.error('History preferences are unreadable and were reset: $e',
+          source: 'storage');
       return [];
     }
   }
@@ -44,6 +48,14 @@ class HistoryStore {
 
   Future<void> remove(String id) async {
     final all = getAll().where((e) => e.id != id).toList();
+    await _prefs.setString(
+        _kHistory, jsonEncode(all.map((x) => x.toJson()).toList()));
+  }
+
+  Future<void> update(HistoryEntry entry) async {
+    final all = getAll()
+        .map((e) => e.id == entry.id ? entry : e)
+        .toList();
     await _prefs.setString(
         _kHistory, jsonEncode(all.map((x) => x.toJson()).toList()));
   }

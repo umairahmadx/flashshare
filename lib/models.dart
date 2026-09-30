@@ -102,6 +102,16 @@ class Collection {
   }
 }
 
+/// Optional per-share settings, applied after the upload via the owner-only
+/// file/collection endpoints. Null fields are skipped.
+class ShareOptions {
+  final String? password;
+  final int? expiryDays; // 1-7, null = server default (3 days)
+  final int? maxDownloads; // 1-1000, null = no cap
+  const ShareOptions({this.password, this.expiryDays, this.maxDownloads});
+  bool get isEmpty => password == null && expiryDays == null && maxDownloads == null;
+}
+
 class HistoryEntry {
   final String id;
   final String url;
@@ -111,6 +121,7 @@ class HistoryEntry {
   final String ownerToken;
   final String kind; // 'file' | 'collection'
   final int createdAt;
+  final bool locked; // password-protected (the password itself is never stored)
 
   HistoryEntry({
     required this.id,
@@ -121,7 +132,20 @@ class HistoryEntry {
     required this.ownerToken,
     required this.kind,
     required this.createdAt,
+    this.locked = false,
   });
+
+  HistoryEntry copyWith({bool? locked, String? expiresAt}) => HistoryEntry(
+        id: id,
+        url: url,
+        filename: filename,
+        size: size,
+        expiresAt: expiresAt ?? this.expiresAt,
+        ownerToken: ownerToken,
+        kind: kind,
+        createdAt: createdAt,
+        locked: locked ?? this.locked,
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -132,6 +156,7 @@ class HistoryEntry {
         'owner_token': ownerToken,
         'kind': kind,
         'created_at': createdAt,
+        'locked': locked,
       };
 
   factory HistoryEntry.fromJson(Map<String, dynamic> j) => HistoryEntry(
@@ -143,6 +168,7 @@ class HistoryEntry {
         ownerToken: j['owner_token'] as String,
         kind: j['kind'] as String,
         createdAt: j['created_at'] as int,
+        locked: j['locked'] as bool? ?? false,
       );
 }
 

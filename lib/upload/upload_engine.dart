@@ -51,7 +51,8 @@ class UploadEngine {
 
   void _emit(UploadProgress p) => _progress.add(p);
 
-  Future<void> enqueue(List<AppFile> files, UploadMode mode) async {
+  Future<void> enqueue(List<AppFile> files, UploadMode mode,
+      {ShareOptions? options}) async {
     if (files.isEmpty) return;
     // One active-batch counter for the whole enqueue, so the idle callback
     // (which stops the foreground service) fires once when the whole batch
@@ -66,7 +67,7 @@ class UploadEngine {
           _emitError('flashshare.zip', 'flashshare.zip', 'Failed to build zip: $e');
           return;
         }
-        await _uploadOne(zip);
+        await _uploadOne(zip, options: options);
         return;
       }
       if (mode == UploadMode.collection) {
@@ -82,23 +83,56 @@ class UploadEngine {
             expiresAt: col.expiresAt,
             ownerToken: col.ownerToken,
             createdAt: DateTime.now().millisecondsSinceEpoch,
+            locked: options?.password != null,
           ));
         } catch (e) {
           _emitError(
               'collection', 'Collection', 'Failed to create collection: $e');
           return;
         }
+        // Collection-level settings (password/expiry/max-downloads) apply to
+        // the whole share link, so set them once on the collection.
+        await _applyOptions('collection', col.id, col.ownerToken, options);
         for (final f in files) {
           await _uploadOne(f, collectionId: col.id);
         }
         return;
       }
       for (final f in files) {
-        await _uploadOne(f);
+        await _uploadOne(f, options: options);
       }
     } finally {
       _active--;
       if (_active == 0) onIdle?.call();
+    }
+  }
+
+  /// Push ShareOptions to the owner-only settings endpoints. Best-effort per
+  /// field: a failure on one setting (e.g. premium-only permanent expiry)
+  /// shouldn't take down the upload it decorates.
+  Future<void> _applyOptions(
+      String kind, String id, String ownerToken, ShareOptions? o) async {
+    if (o == null || o.isEmpty) return;
+    if (o.password != null) {
+      try {
+        await _client.setPassword(kind, id, o.password!, ownerToken);
+      } catch (e) {
+        LogStore.instanceOrNull?.warning('Password setting failed: $e');
+      }
+    }
+    if (o.expiryDays != null) {
+      try {
+        await _client.setExpiry(kind, id, o.expiryDays, ownerToken);
+      } catch (e) {
+        LogStore.instanceOrNull?.warning('Expiry setting failed: $e');
+      }
+    }
+    if (o.maxDownloads != null) {
+      try {
+        await _client.setMaxDownloads(kind, id, o.maxDownloads, ownerToken);
+      } catch (e) {
+        LogStore.instanceOrNull?.warning('Max-downloads setting failed: $e');
+      }
     }
   }
 
@@ -113,7 +147,8 @@ class UploadEngine {
     return BytesFile('flashshare-$ts.zip', Uint8List.fromList(zipped));
   }
 
-  Future<void> _uploadOne(AppFile file, {String? collectionId}) async {
+  Future<void> _uploadOne(AppFile file,
+      {String? collectionId, ShareOptions? options}) async {
     final key = '${_seq++}:${file.name}';
     final name = file.name;
     UploadInit? init;
@@ -158,11 +193,18 @@ class UploadEngine {
         expiresAt: rec.expiresAt,
         ownerToken: rec.ownerToken,
         createdAt: DateTime.now().millisecondsSinceEpoch,
+        locked: options?.password != null,
       ));
+
+      // Files inside a collection inherit the collection's settings; only
+      // apply per-file options to standalone uploads.
+      if (collectionId == null) {
+        await _applyOptions('file', rec.id, rec.ownerToken, options);
+      }
 
       // Background task: generate and cache a thumbnail locally so it shows
       // up instantly in the History list without a network download.
-      unawaited(_cacheThumbnail(file, rec.url));
+      unawaited(_cacheThumbnail(file, rec.url, id: rec.id, token: rec.ownerToken));
 
       _emit(UploadProgress(
           key: key,
@@ -302,7 +344,30 @@ class UploadEngine {
 
   void cancel(String key) => _cancellers[key]?.cancel('user');
 
-  Future<void> _cacheThumbnail(AppFile file, String url) async {
+  /// Re-apply share options to an existing history entry (owner-only).
+  /// A null password on a previously locked share removes the password.
+  /// Returns the updated entry on success.
+  Future<HistoryEntry> applyOptions(
+      HistoryEntry e, ShareOptions options) async {
+    if (options.password != null) {
+      await _client.setPassword(e.kind, e.id, options.password!, e.ownerToken);
+    } else if (e.locked) {
+      await _client.removePassword(e.kind, e.id, e.ownerToken);
+    }
+    if (options.expiryDays != null) {
+      await _client.setExpiry(e.kind, e.id, options.expiryDays, e.ownerToken);
+    }
+    if (options.maxDownloads != null) {
+      await _client.setMaxDownloads(
+          e.kind, e.id, options.maxDownloads, e.ownerToken);
+    }
+    final updated = e.copyWith(locked: options.password != null);
+    await _store.update(updated);
+    return updated;
+  }
+
+  Future<void> _cacheThumbnail(AppFile file, String url,
+      {String? id, String? token}) async {
     if (kIsWeb) return; // CacheManager/File ops generally native-only here.
     try {
       final ext = file.name.split('.').last.toLowerCase();
@@ -340,6 +405,18 @@ class UploadEngine {
 
       if (thumb != null) {
         await DefaultCacheManager().putFile(url, thumb, fileExtension: 'jpg');
+        // Also push the thumbnail to the server so it shows on the public
+        // download page (video/image files). Local-only for PDFs (the API
+        // docs scope thumbnails to "video or image file" - don't fight it).
+        if (id != null && token != null && !['pdf'].contains(ext)) {
+          try {
+            if (thumb.length <= 2 * 1024 * 1024) {
+              await _client.uploadThumbnail(id, thumb, token);
+            }
+          } catch (err) {
+            LogStore.instanceOrNull?.warning('Thumbnail upload failed: $err');
+          }
+        }
       }
     } catch (e) {
       LogStore.instanceOrNull?.warning('Thumbnail caching failed: $e');
