@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -369,6 +370,10 @@ class UploadEngine {
   Future<void> _cacheThumbnail(AppFile file, String url,
       {String? id, String? token}) async {
     if (kIsWeb) return; // CacheManager/File ops generally native-only here.
+    // Which step we were on when something threw. pdfx reports every native
+    // failure as a bare "Unknown error" (with an obfuscated stack), so the
+    // log needs our own breadcrumb to be actionable.
+    var stage = 'read bytes';
     try {
       final ext = file.name.split('.').last.toLowerCase();
       Uint8List? thumb;
@@ -378,6 +383,7 @@ class UploadEngine {
         thumb = await file.readAsBytes();
       } else if (['mp4', 'mov', 'avi', 'mkv'].contains(ext) && file.path != null) {
         // For videos, generate a frame.
+        stage = 'video frame';
         thumb = await VideoThumbnail.thumbnailData(
           video: file.path!,
           imageFormat: ImageFormat.JPEG,
@@ -386,11 +392,22 @@ class UploadEngine {
         );
       } else if (ext == 'pdf') {
         // For PDFs, render the first page.
-        final doc = file.path != null
-            ? await PdfDocument.openFile(file.path!)
-            : await PdfDocument.openData(await file.readAsBytes());
+        stage = 'pdf open';
+        PdfDocument doc;
         try {
+          doc = file.path != null
+              ? await PdfDocument.openFile(file.path!)
+              : await PdfDocument.openData(await file.readAsBytes());
+        } on PlatformException {
+          // The path isn't readable (stale picker/share cache, scoped
+          // storage) even though it pointed at a real file earlier — the
+          // bytes still are, so render from memory instead of giving up.
+          doc = await PdfDocument.openData(await file.readAsBytes());
+        }
+        try {
+          stage = 'pdf page';
           final page = await doc.getPage(1);
+          stage = 'pdf render';
           final pageImg = await page.render(
             width: page.width / 2,
             height: page.height / 2,
@@ -398,12 +415,14 @@ class UploadEngine {
             quality: 75,
           );
           thumb = pageImg?.bytes;
+          stage = 'pdf close';
         } finally {
           await doc.close();
         }
       }
 
       if (thumb != null) {
+        stage = 'cache write';
         await DefaultCacheManager().putFile(url, thumb, fileExtension: 'jpg');
         // Also push the thumbnail to the server so it shows on the public
         // download page (video/image files). Local-only for PDFs (the API
@@ -418,8 +437,30 @@ class UploadEngine {
           }
         }
       }
+    } on PlatformException catch (e) {
+      LogStore.instanceOrNull?.warning('Thumbnail caching failed for '
+          '"${file.name}" at $stage: ${_describePlatformError(e)}');
     } catch (e) {
-      LogStore.instanceOrNull?.warning('Thumbnail caching failed: $e');
+      LogStore.instanceOrNull?.warning(
+          'Thumbnail caching failed for "${file.name}" at $stage: $e');
     }
+  }
+
+  /// One-line rendering of a [PlatformException].
+  ///
+  /// pdfx (Pigeon) stuffs a multi-line native stack into `details`, which
+  /// would bury the in-app log screen in noise; keep code + message + cause.
+  static String _describePlatformError(PlatformException e) {
+    final details = e.details?.toString() ?? '';
+    const causePrefix = 'Cause: ';
+    const stackMarker = ', Stacktrace:';
+    final cause = details.startsWith(causePrefix) &&
+            details.contains(stackMarker)
+        ? details
+            .substring(causePrefix.length, details.indexOf(stackMarker))
+            .trim()
+        : null;
+    final suffix = cause == null || cause == 'null' ? '' : ' (cause: $cause)';
+    return '${e.code}: ${e.message}$suffix';
   }
 }
