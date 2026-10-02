@@ -320,7 +320,7 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-      bottomNavigationBar: _BottomNav(index: _tab, onChanged: _goTo),
+      bottomNavigationBar: BottomNav(index: _tab, onChanged: _goTo),
     );
   }
 }
@@ -425,10 +425,15 @@ class _LiveDot extends StatelessWidget {
 
 /// Bottom tab bar: Send / History / Settings. Monochrome — the selected tab is
 /// a filled pill, everything else is ink on the card surface.
-class _BottomNav extends StatelessWidget {
+///
+/// The bar must size itself to its content: the `bottomNavigationBar` slot is
+/// laid out with `minHeight: 0` and a maxHeight as tall as the Scaffold, so any
+/// child that stretches vertically swallows the whole screen (see the
+/// `mainAxisSize: MainAxisSize.min` on each tab's Column).
+class BottomNav extends StatelessWidget {
   final int index;
   final ValueChanged<int> onChanged;
-  const _BottomNav({required this.index, required this.onChanged});
+  const BottomNav({required this.index, required this.onChanged});
 
   static const _tabs = [
     (icon: Icons.bolt_rounded, label: 'Send'),
@@ -462,6 +467,7 @@ class _BottomNav extends StatelessWidget {
                         color: i == index ? ink.accent : ink.lineSoft),
                   ),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         _tabs[i].icon,
