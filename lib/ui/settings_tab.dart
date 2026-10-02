@@ -84,9 +84,7 @@ class _SettingsTabState extends State<SettingsTab> {
           margin: EdgeInsets.zero,
           child: ListTile(
             leading: const Icon(Icons.cloud_upload_outlined),
-            title: const Text('Keep uploading when app is minimized'),
-            subtitle: const Text(
-                'Uses an Android foreground service. Best-effort on web/iOS.'),
+            title: const Text('Keep uploading when minimized'),
           ),
         ),
         const _SectionLabel('Usage'),
@@ -97,8 +95,7 @@ class _SettingsTabState extends State<SettingsTab> {
               SwitchListTile(
                 secondary: const Icon(Icons.data_usage_outlined),
                 title: const Text('Show upload quota'),
-                subtitle: const Text(
-                    'Displays your remaining anonymous upload bandwidth (100 GB / 24 h).'),
+                subtitle: const Text('Remaining bandwidth: 100 GB / 24 h.'),
                 value: widget.store.showQuota,
                 onChanged: (v) {
                   AppLog.info('Upload quota display → $v', source: 'ui.settings');
@@ -121,26 +118,13 @@ class _SettingsTabState extends State<SettingsTab> {
         const _SectionLabel('Diagnostics'),
         Card(
           margin: EdgeInsets.zero,
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.terminal_outlined),
-                title: const Text('Event log'),
-                subtitle: Text(
-                    '${widget.logCount} recorded event${widget.logCount == 1 ? '' : 's'}'
-                    ' — actions, network calls, warnings and crashes.'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: widget.onOpenLogs,
-              ),
-              const Divider(height: 1, indent: 16, endIndent: 16),
-              ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: const Text('Verbose tracing is on'),
-                subtitle: const Text(
-                    'Every tap, filter, dialog and API call is written to the '
-                    'log, so a bug report can be copied out after it happens.'),
-              ),
-            ],
+          child: ListTile(
+            leading: const Icon(Icons.terminal_outlined),
+            title: const Text('Event log'),
+            subtitle: Text(
+                '${widget.logCount} recorded event${widget.logCount == 1 ? '' : 's'}'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: widget.onOpenLogs,
           ),
         ),
       ],

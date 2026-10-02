@@ -138,6 +138,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ],
           ),
         ),
+        // The kind/expiry/sort row and the file-type row are two distinct
+        // filter groups — give them breathing room so the category chips
+        // don't read as a continuation of the first row.
+        const SizedBox(height: AppSpacing.md),
         SizedBox(
           height: 36,
           child: ListView(

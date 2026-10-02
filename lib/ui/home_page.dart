@@ -463,8 +463,6 @@ class BottomNav extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: i == index ? ink.accent : AppColors.transparent,
                     borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border: Border.all(
-                        color: i == index ? ink.accent : ink.lineSoft),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
